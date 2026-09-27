@@ -125,7 +125,7 @@ function Test-UnmatchedFiles {
 
     # Both folders empty
     if ($testFiles.Count -eq 0 -and $liveFiles.Count -eq 0) {
-        Write-Host "Both folders contain no matching files." -ForegroundColor Cyan
+        Write-Host "Both folders contain no pdf files." -ForegroundColor Cyan
         return
     }
 
