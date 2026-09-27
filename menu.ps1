@@ -16,7 +16,7 @@ $Config = @{
 # ============================================================
 # Change all file to pdf
 # ============================================================
-function Change-FileExtensionToPdf {
+function Rename-FilesToPdf  {
 
     $folders = @(
         $Config.TestPath
@@ -516,7 +516,7 @@ do {
 
     switch ($choice) {
         "1" {
-            Change-FileExtensionToPdf
+            Rename-FilesToPdf 
         }
 
         "2" {
