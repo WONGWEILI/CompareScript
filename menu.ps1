@@ -211,7 +211,9 @@ function Invoke-PdfCompare {
 
     Write-Host ""
 
+    # ========================================================
     # Validate directories
+    # ========================================================
     if (-not (Test-Path -LiteralPath $testFolder -PathType Container)) {
         Write-Warning "Test folder not found: $testFolder"
         return
@@ -222,14 +224,18 @@ function Invoke-PdfCompare {
         return
     }
 
+    # ========================================================
     # Validate diff-pdf.exe
+    # ========================================================
     if (-not (Test-Path -LiteralPath $diffPdfExe -PathType Leaf)) {
         Write-Warning "diff-pdf.exe was not found:"
         Write-Warning $diffPdfExe
         return
     }
 
+    # ========================================================
     # Create results folder
+    # ========================================================
     try {
         if (-not (Test-Path -LiteralPath $resultsDir -PathType Container)) {
             New-Item `
@@ -245,7 +251,9 @@ function Invoke-PdfCompare {
         return
     }
 
+    # ========================================================
     # Load test files
+    # ========================================================
     try {
         $testFiles = @(
             Get-ChildItem `
@@ -266,25 +274,40 @@ function Invoke-PdfCompare {
         return
     }
 
-    $comparedCount = 0
-    $skippedCount  = 0
-    $failedCount   = 0
+    # ========================================================
+    # Counters
+    # ========================================================
+    $identicalCount = 0
+    $differentCount = 0
+    $missingCount   = 0
+    $failedCount    = 0
 
+    # ========================================================
+    # Compare PDFs
+    # ========================================================
     foreach ($file in $testFiles) {
+
         $original = $file.FullName
         $revised  = Join-Path $liveFolder $file.Name
         $output   = Join-Path $resultsDir "diff_$($file.Name)"
 
-        # Skip unmatched file
+        Write-Host ""
+        Write-Host "Comparing: $($file.Name)" -ForegroundColor Cyan
+
+        # ----------------------------------------------------
+        # Matching Live file does not exist
+        # ----------------------------------------------------
         if (-not (Test-Path -LiteralPath $revised -PathType Leaf)) {
-            Write-Warning "Skipped: $($file.Name) - no matching file in Live."
-            $skippedCount++
+            Write-Host "  MISSING   : No matching file in Live." `
+                -ForegroundColor Yellow
+
+            $missingCount++
             continue
         }
 
-        Write-Host "Comparing: $($file.Name)" -ForegroundColor Yellow
-
-        # Remove an old result for this file
+        # ----------------------------------------------------
+        # Remove old diff result
+        # ----------------------------------------------------
         if (Test-Path -LiteralPath $output -PathType Leaf) {
             try {
                 Remove-Item `
@@ -293,33 +316,59 @@ function Invoke-PdfCompare {
                     -ErrorAction Stop
             }
             catch {
-                Write-Warning "Could not remove old result: $output"
+                Write-Warning "Failed to remove old result: $output"
                 $failedCount++
                 continue
             }
         }
 
+        # ----------------------------------------------------
+        # Run diff-pdf
+        # ----------------------------------------------------
         try {
-            # Run diff-pdf
-            & $diffPdfExe "--output-diff=$output" -s -m $original $revised
+            & $diffPdfExe `
+                "--output-diff=$output" `
+                -s `
+                -m `
+                $original `
+                $revised
 
             $exitCode = $LASTEXITCODE
 
-            if ($exitCode -eq 0) {
-                Write-Host "Completed: $($file.Name)" -ForegroundColor Green
-                $comparedCount++
-            }
-            else {
-                Write-Warning (
-                    "diff-pdf returned exit code $exitCode for '$($file.Name)'."
-                )
+            switch ($exitCode) {
 
-                $failedCount++
+                # --------------------------------------------
+                # Exit code 0 = PDFs are identical
+                # --------------------------------------------
+                0 {
+                    Write-Host "  IDENTICAL" -ForegroundColor Green
+                    $identicalCount++
+                }
+
+                # --------------------------------------------
+                # Exit code 1 = PDFs are different
+                # --------------------------------------------
+                1 {
+                    Write-Host "  DIFFERENT" -ForegroundColor Yellow
+                    $differentCount++
+                }
+
+                # --------------------------------------------
+                # Anything else = unexpected failure
+                # --------------------------------------------
+                default {
+                    Write-Warning (
+                        "FAILED: diff-pdf returned unexpected exit code " +
+                        "$exitCode for '$($file.Name)'."
+                    )
+
+                    $failedCount++
+                }
             }
         }
         catch {
             Write-Warning (
-                "Failed to compare '$($file.Name)': " +
+                "FAILED: '$($file.Name)': " +
                 $_.Exception.Message
             )
 
@@ -327,11 +376,33 @@ function Invoke-PdfCompare {
         }
     }
 
+    # ========================================================
+    # Summary
+    # ========================================================
     Write-Host ""
-    Write-Host "Comparison finished." -ForegroundColor Cyan
-    Write-Host "Compared : $comparedCount"
-    Write-Host "Skipped  : $skippedCount"
-    Write-Host "Failed   : $failedCount"
+    Write-Host "==================================" -ForegroundColor Cyan
+    Write-Host "       COMPARISON SUMMARY         " -ForegroundColor Cyan
+    Write-Host "==================================" -ForegroundColor Cyan
+
+    Write-Host "Identical : " -NoNewline
+    Write-Host $identicalCount -ForegroundColor Green
+
+    Write-Host "Different : " -NoNewline
+    Write-Host $differentCount -ForegroundColor Yellow
+
+    Write-Host "Missing   : " -NoNewline
+    Write-Host $missingCount -ForegroundColor Yellow
+
+    Write-Host "Failed    : " -NoNewline
+    Write-Host $failedCount -ForegroundColor Red
+
+    Write-Host "----------------------------------"
+
+    Write-Host "Total     : " -NoNewline
+    Write-Host $testFiles.Count -ForegroundColor Cyan
+
+    Write-Host "==================================" -ForegroundColor Cyan
+
     Write-Host ""
     Write-Host "Results folder:" -ForegroundColor Cyan
     Write-Host $resultsDir
