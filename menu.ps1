@@ -37,6 +37,10 @@ function Change-FileExtensionToPdf {
                     -File `
                     -ErrorAction Stop
             )
+            if ($files.Count -eq 0) {
+                Write-Host " No file in '$folder'"
+                continue
+            }
 
             foreach ($file in $files) {
 
@@ -418,10 +422,11 @@ function Show-Menu {
     Write-Host "==================================" -ForegroundColor Cyan
     Write-Host "       PDF BULK COMPARE           " -ForegroundColor Cyan
     Write-Host "==================================" -ForegroundColor Cyan
-    Write-Host "1. Check Unmatched Files"
-    Write-Host "2. Compare PDFs"
-    Write-Host "3. Quick Delete"
-    Write-Host "4. Exit"
+    Write-Host "1. Change File Extensions to PDF"
+    Write-Host "2. Check Unmatched Files"
+    Write-Host "3. Compare PDFs"
+    Write-Host "4. Quick Delete"
+    Write-Host "5. Exit"
     Write-Host ""
 }
 
@@ -440,27 +445,31 @@ do {
 
     switch ($choice) {
         "1" {
-            Test-UnmatchedFiles
+            Change-FileExtensionToPdf
         }
 
         "2" {
-            Invoke-PdfCompare
+            Test-UnmatchedFiles
         }
 
         "3" {
-            Invoke-QuickDelete
+            Invoke-PdfCompare
         }
 
         "4" {
+            Invoke-QuickDelete
+        }
+
+        "5" {
             Write-Host ""
             Write-Host "Exit!" -ForegroundColor Cyan
         }
 
         default {
             Write-Host ""
-            Write-Host "Invalid choice. Please enter 1, 2, 3, or 4." `
+            Write-Host "Invalid choice. Please enter 1, 2, 3, 4, or 5." `
                 -ForegroundColor Red
         }
     }
 
-} while ($choice -ne "4")
+} while ($choice -ne "5")
