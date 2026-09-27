@@ -13,6 +13,65 @@ $Config = @{
     ResultPath = Join-Path $BasePath "results"
     DiffPdfExe = Join-Path $BasePath "diff-pdf.exe"
 }
+# ============================================================
+# Change all file to pdf
+# ============================================================
+function Change-FileExtensionToPdf {
+
+    $folders = @(
+        $Config.TestPath
+        $Config.LivePath
+    )
+
+    foreach ($folder in $folders) {
+
+        if (-not (Test-Path -LiteralPath $folder -PathType Container)) {
+            Write-Warning "Folder not found: $folder"
+            continue
+        }
+
+        try {
+            $files = @(
+                Get-ChildItem `
+                    -LiteralPath $folder `
+                    -File `
+                    -ErrorAction Stop
+            )
+
+            foreach ($file in $files) {
+
+                $newName = [System.IO.Path]::ChangeExtension(
+                    $file.Name,
+                    ".pdf"
+                )
+
+                # Skip files already ending in .pdf
+                if ($file.Name -ceq $newName) {
+                    continue
+                }
+
+                $newPath = Join-Path $folder $newName
+
+                # Prevent overwriting an existing file
+                if (Test-Path -LiteralPath $newPath) {
+                    Write-Warning "Cannot rename '$($file.Name)' because '$newName' already exists."
+                    continue
+                }
+
+                Rename-Item `
+                    -LiteralPath $file.FullName `
+                    -NewName $newName `
+                    -ErrorAction Stop
+
+                Write-Host "Renamed: $($file.Name) -> $newName" -ForegroundColor Green
+            }
+        }
+        catch {
+            Write-Warning "Failed processing '$folder': $($_.Exception.Message)"
+        }
+    }
+}
+
 
 
 # ============================================================
