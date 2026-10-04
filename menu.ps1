@@ -498,6 +498,7 @@ function Show-Menu {
     Write-Host "3. Compare PDFs"
     Write-Host "4. Quick Delete"
     Write-Host "5. Exit"
+    Write-Host "Note : Make sure to Check Unmatched Files before comparing PDFs" -ForegroundColor Yellow
     Write-Host ""
 }
 
