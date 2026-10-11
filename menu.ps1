@@ -282,6 +282,11 @@ function Invoke-PdfCompare {
     $missingCount   = 0
     $failedCount    = 0
 
+    # Track filenames in comparison processing order
+    $failedFiles    = @()
+    $differentFiles = @()
+    $missingFiles   = @()
+
     # ========================================================
     # Compare PDFs
     # ========================================================
@@ -302,6 +307,7 @@ function Invoke-PdfCompare {
                 -ForegroundColor Yellow
 
             $missingCount++
+            $missingFiles += $file.Name
             continue
         }
 
@@ -318,6 +324,7 @@ function Invoke-PdfCompare {
             catch {
                 Write-Warning "Failed to remove old result: $output"
                 $failedCount++
+                $failedFiles += $file.Name
                 continue
             }
         }
@@ -351,6 +358,7 @@ function Invoke-PdfCompare {
                 1 {
                     Write-Host "  DIFFERENT" -ForegroundColor Yellow
                     $differentCount++
+                    $differentFiles += $file.Name
                 }
 
                 # --------------------------------------------
@@ -363,6 +371,7 @@ function Invoke-PdfCompare {
                     )
 
                     $failedCount++
+                    $failedFiles += $file.Name
                 }
             }
         }
@@ -373,6 +382,7 @@ function Invoke-PdfCompare {
             )
 
             $failedCount++
+            $failedFiles += $file.Name
         }
     }
 
@@ -402,6 +412,42 @@ function Invoke-PdfCompare {
     Write-Host $testFiles.Count -ForegroundColor Cyan
 
     Write-Host "==================================" -ForegroundColor Cyan
+
+    # ========================================================
+    # Failed and different filename lists
+    # ========================================================
+    Write-Host ""
+    Write-Host "FAILED FILES ($($failedFiles.Count))" -ForegroundColor Yellow
+
+    if ($failedFiles.Count -gt 0) {
+        Write-Host "----------------------------------" -ForegroundColor Yellow
+
+        for ($i = 0; $i -lt $failedFiles.Count; $i++) {
+            Write-Host "$($i + 1). $($failedFiles[$i])" -ForegroundColor Yellow
+        }
+    }
+
+    Write-Host ""
+    Write-Host "DIFFERENT FILES ($($differentFiles.Count))" -ForegroundColor Yellow
+
+    if ($differentFiles.Count -gt 0) {
+        Write-Host "----------------------------------" -ForegroundColor Yellow
+
+        for ($i = 0; $i -lt $differentFiles.Count; $i++) {
+            Write-Host "$($i + 1). $($differentFiles[$i])" -ForegroundColor Yellow
+        }
+    }
+
+    Write-Host ""
+    Write-Host "MISSING FILES ($($missingFiles.Count))" -ForegroundColor Yellow
+
+    if ($missingFiles.Count -gt 0) {
+        Write-Host "----------------------------------" -ForegroundColor Yellow
+
+        for ($i = 0; $i -lt $missingFiles.Count; $i++) {
+            Write-Host "$($i + 1). $($missingFiles[$i])" -ForegroundColor Yellow
+        }
+    }
 
     Write-Host ""
     Write-Host "Results folder:" -ForegroundColor Cyan
