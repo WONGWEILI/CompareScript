@@ -334,7 +334,6 @@ function Invoke-PdfCompare {
         # ----------------------------------------------------
         try {
             & $diffPdfExe `
-                "--output-diff=$output" `
                 -s `
                 -m `
                 $original `
@@ -359,6 +358,23 @@ function Invoke-PdfCompare {
                     Write-Host "  DIFFERENT" -ForegroundColor Yellow
                     $differentCount++
                     $differentFiles += $file.Name
+
+                    # Generate output PDF only when files are different
+                    try {
+                        & $diffPdfExe `
+                            "--output-diff=$output" `
+                            -s `
+                            -m `
+                            $original `
+                            $revised
+
+                        if ($LASTEXITCODE -ne 1) {
+                            Write-Warning "Failed to generate difference PDF for '$($file.Name)'. Exit code: $LASTEXITCODE"
+                        }
+                    }
+                    catch {
+                        Write-Warning "Failed to generate difference PDF for '$($file.Name)': $($_.Exception.Message)"
+                    }
                 }
 
                 # --------------------------------------------
