@@ -12,6 +12,9 @@ $Config = @{
     LivePath   = Join-Path $BasePath "live"
     ResultPath = Join-Path $BasePath "results"
     DiffPdfExe = Join-Path $BasePath "diff-pdf.exe"
+    TextResultPath = Join-Path $BasePath "textresult"
+    PdfToTextExe   = "pdftotext"
+    GitExe         = "git"
 }
 # ============================================================
 # Change all file to pdf
@@ -402,6 +405,39 @@ function Invoke-PdfCompare {
         }
     }
 
+    Show-CompareSummary `
+        -IdenticalCount $identicalCount `
+        -DifferentCount $differentCount `
+        -MissingCount $missingCount `
+        -FailedCount $failedCount `
+        -TotalCount $testFiles.Count `
+        -FailedFiles $failedFiles `
+        -DifferentFiles $differentFiles `
+        -MissingFiles $missingFiles `
+        -ResultsDir $resultsDir
+}
+
+
+# ============================================================
+# Print comparison summary and filename lists
+# ============================================================
+function Show-CompareSummary {
+    param(
+        [int]$IdenticalCount,
+        [int]$DifferentCount,
+        [int]$MissingCount,
+        [int]$FailedCount,
+        [int]$TotalCount,
+        [string[]]$FailedFiles = @(),
+        [string[]]$DifferentFiles = @(),
+        [string[]]$MissingFiles = @(),
+        [string]$ResultsDir
+    )
+
+    $FailedFiles    = @($FailedFiles)
+    $DifferentFiles = @($DifferentFiles)
+    $MissingFiles   = @($MissingFiles)
+
     # ========================================================
     # Summary
     # ========================================================
@@ -425,7 +461,7 @@ function Invoke-PdfCompare {
     Write-Host "----------------------------------"
 
     Write-Host "Total     : " -NoNewline
-    Write-Host $testFiles.Count -ForegroundColor Cyan
+    Write-Host $TotalCount -ForegroundColor Cyan
 
     Write-Host "==================================" -ForegroundColor Cyan
 
@@ -472,13 +508,233 @@ function Invoke-PdfCompare {
 
 
 # ============================================================
-# Delete contents of test, live, and results
+# Compare PDF text using pdftotext + git diff
+# ============================================================
+function Invoke-PdfTextCompare {
+    $testFolder = $Config.TestPath
+    $liveFolder = $Config.LivePath
+    $resultsDir = $Config.TextResultPath
+    $pdfToText  = $Config.PdfToTextExe
+    $gitExe     = $Config.GitExe
+    $filter     = $Config.FileFilter
+    $tempDir    = Join-Path $env:TEMP "pdf-textdiff"
+
+    Write-Host ""
+
+    # ========================================================
+    # Validate directories
+    # ========================================================
+    if (-not (Test-Path -LiteralPath $testFolder -PathType Container)) {
+        Write-Warning "Test folder not found: $testFolder"
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $liveFolder -PathType Container)) {
+        Write-Warning "Live folder not found: $liveFolder"
+        return
+    }
+
+    # ========================================================
+    # Validate pdftotext and git
+    # ========================================================
+    if (-not (Get-Command $pdfToText -ErrorAction SilentlyContinue)) {
+        Write-Warning "pdftotext was not found. Install Poppler and add it to PATH."
+        return
+    }
+
+    if (-not (Get-Command $gitExe -ErrorAction SilentlyContinue)) {
+        Write-Warning "git was not found. Install Git and add it to PATH."
+        return
+    }
+
+    # ========================================================
+    # Create results and temp folders
+    # ========================================================
+    try {
+        foreach ($dir in @($resultsDir, $tempDir)) {
+            if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
+                New-Item `
+                    -ItemType Directory `
+                    -Path $dir `
+                    -Force `
+                    -ErrorAction Stop |
+                    Out-Null
+            }
+        }
+    }
+    catch {
+        Write-Warning "Could not create folder: $($_.Exception.Message)"
+        return
+    }
+
+    # ========================================================
+    # Load test files
+    # ========================================================
+    try {
+        $testFiles = @(
+            Get-ChildItem `
+                -LiteralPath $testFolder `
+                -Filter $filter `
+                -File `
+                -ErrorAction Stop
+        )
+    }
+    catch {
+        Write-Warning "Could not read test files: $($_.Exception.Message)"
+        return
+    }
+
+    if ($testFiles.Count -eq 0) {
+        Write-Warning "No PDF files found in:"
+        Write-Warning $testFolder
+        return
+    }
+
+    # ========================================================
+    # Counters
+    # ========================================================
+    $identicalCount = 0
+    $differentCount = 0
+    $missingCount   = 0
+    $failedCount    = 0
+
+    $failedFiles    = @()
+    $differentFiles = @()
+    $missingFiles   = @()
+
+    # ========================================================
+    # Compare PDF text
+    # ========================================================
+    foreach ($file in $testFiles) {
+
+        $original = $file.FullName
+        $revised  = Join-Path $liveFolder $file.Name
+        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+        $output   = Join-Path $resultsDir "textdiff_$baseName.diff"
+        $testTxt  = Join-Path $tempDir "test_$baseName.txt"
+        $liveTxt  = Join-Path $tempDir "live_$baseName.txt"
+
+        Write-Host ""
+        Write-Host "Comparing text: $($file.Name)" -ForegroundColor Cyan
+
+        # ----------------------------------------------------
+        # Matching Live file does not exist
+        # ----------------------------------------------------
+        if (-not (Test-Path -LiteralPath $revised -PathType Leaf)) {
+            Write-Host "  MISSING   : No matching file in Live." `
+                -ForegroundColor Yellow
+
+            $missingCount++
+            $missingFiles += $file.Name
+            continue
+        }
+
+        # ----------------------------------------------------
+        # Remove old diff result
+        # ----------------------------------------------------
+        if (Test-Path -LiteralPath $output -PathType Leaf) {
+            try {
+                Remove-Item `
+                    -LiteralPath $output `
+                    -Force `
+                    -ErrorAction Stop
+            }
+            catch {
+                Write-Warning "Failed to remove old result: $output"
+                $failedCount++
+                $failedFiles += $file.Name
+                continue
+            }
+        }
+
+        # ----------------------------------------------------
+        # Extract text from both PDFs
+        # ----------------------------------------------------
+        & $pdfToText -layout -enc UTF-8 $original $testTxt
+        $testExit = $LASTEXITCODE
+
+        & $pdfToText -layout -enc UTF-8 $revised $liveTxt
+        $liveExit = $LASTEXITCODE
+
+        if ($testExit -ne 0 -or $liveExit -ne 0) {
+            Write-Warning "FAILED: pdftotext could not read '$($file.Name)'."
+            $failedCount++
+            $failedFiles += $file.Name
+            continue
+        }
+
+        # ----------------------------------------------------
+        # Run git diff (character level)
+        # ----------------------------------------------------
+        & $gitExe diff `
+            --no-index `
+            --no-color `
+            --text `
+            --word-diff=plain `
+            --word-diff-regex=. `
+            "--output=$output" `
+            $testTxt `
+            $liveTxt
+
+        $exitCode = $LASTEXITCODE
+
+        switch ($exitCode) {
+
+            # Exit code 0 = text is identical
+            0 {
+                Write-Host "  IDENTICAL" -ForegroundColor Green
+                $identicalCount++
+                Remove-Item -LiteralPath $output -Force -ErrorAction SilentlyContinue
+            }
+
+            # Exit code 1 = text is different
+            1 {
+                Write-Host "  DIFFERENT" -ForegroundColor Yellow
+                $differentCount++
+                $differentFiles += $file.Name
+            }
+
+            # Anything else = unexpected failure
+            default {
+                Write-Warning (
+                    "FAILED: git diff returned unexpected exit code " +
+                    "$exitCode for '$($file.Name)'."
+                )
+
+                $failedCount++
+                $failedFiles += $file.Name
+                Remove-Item -LiteralPath $output -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    # ========================================================
+    # Clean up temp text files
+    # ========================================================
+    Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    Show-CompareSummary `
+        -IdenticalCount $identicalCount `
+        -DifferentCount $differentCount `
+        -MissingCount $missingCount `
+        -FailedCount $failedCount `
+        -TotalCount $testFiles.Count `
+        -FailedFiles $failedFiles `
+        -DifferentFiles $differentFiles `
+        -MissingFiles $missingFiles `
+        -ResultsDir $resultsDir
+}
+
+
+# ============================================================
+# Delete contents of test, live, results, and textresult
 # ============================================================
 function Invoke-QuickDelete {
     $folders = @(
         $Config.TestPath
         $Config.LivePath
         $Config.ResultPath
+        $Config.TextResultPath
     )
 
     Write-Host ""
@@ -557,9 +813,10 @@ function Show-Menu {
     Write-Host "==================================" -ForegroundColor Cyan
     Write-Host "1. Change File Extensions to PDF"
     Write-Host "2. Check Unmatched Files"
-    Write-Host "3. Compare PDFs"
-    Write-Host "4. Quick Delete"
-    Write-Host "5. Exit"
+    Write-Host "3. Compare PDF Text"
+    Write-Host "4. Compare PDFs"
+    Write-Host "5. Quick Delete"
+    Write-Host "6. Exit"
     Write-Host "Note : Make sure to Check Unmatched Files before comparing PDFs" -ForegroundColor Yellow
     Write-Host ""
 }
@@ -587,23 +844,27 @@ do {
         }
 
         "3" {
-            Invoke-PdfCompare
+            Invoke-PdfTextCompare
         }
 
         "4" {
-            Invoke-QuickDelete
+            Invoke-PdfCompare
         }
 
         "5" {
+            Invoke-QuickDelete
+        }
+
+        "6" {
             Write-Host ""
             Write-Host "Exit!" -ForegroundColor Cyan
         }
 
         default {
             Write-Host ""
-            Write-Host "Invalid choice. Please enter 1, 2, 3, 4, or 5." `
+            Write-Host "Invalid choice. Please enter 1, 2, 3, 4, 5, or 6." `
                 -ForegroundColor Red
         }
     }
 
-} while ($choice -ne "5")
+} while ($choice -ne "6")
