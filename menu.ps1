@@ -650,10 +650,10 @@ function Invoke-PdfTextCompare {
         # ----------------------------------------------------
         # Extract text from both PDFs
         # ----------------------------------------------------
-        & $pdfToText -layout -enc UTF-8 $original $testTxt
+        & $pdfToText -raw -enc UTF-8 $original $testTxt
         $testExit = $LASTEXITCODE
 
-        & $pdfToText -layout -enc UTF-8 $revised $liveTxt
+        & $pdfToText -raw -enc UTF-8 $revised $liveTxt
         $liveExit = $LASTEXITCODE
 
         if ($testExit -ne 0 -or $liveExit -ne 0) {
